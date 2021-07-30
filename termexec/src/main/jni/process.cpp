@@ -20,12 +20,13 @@
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <dirent.h>
-#include <errno.h>
+#include <cerrno>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <termios.h>
 #include <signal.h>
+#include <string.h>
 
 typedef unsigned short char16_tt;
 
