@@ -16,6 +16,11 @@
 -->
 <resources>
    <string name="application_terminal">Terminal Emulator</string>
+
+    <string name="private_version">989ba04aca9c0489f6ab35cd2bd7b1dac8d96c2f</string>
+    <string name="presplash_color">#000000</string>
+    <string name="urlScheme">kivy</string>
+
    <string name="preferences">Preferences</string>
    <string name="new_window">New window</string>
    <string name="close_window">Close window</string>
