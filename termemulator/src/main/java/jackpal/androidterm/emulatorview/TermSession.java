@@ -25,6 +25,7 @@ import java.nio.CharBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -108,6 +109,7 @@ public class TermSession {
          */
         void onSessionFinish(TermSession session);
     }
+
     private FinishCallback mFinishCallback;
 
     private boolean mIsRunning = false;
@@ -139,7 +141,7 @@ public class TermSession {
     public TermSession(final boolean exitOnEOF) {
         mWriteCharBuffer = CharBuffer.allocate(2);
         mWriteByteBuffer = ByteBuffer.allocate(4);
-        mUTF8Encoder = Charset.forName("UTF-8").newEncoder();
+        mUTF8Encoder = StandardCharsets.UTF_8.newEncoder();
         mUTF8Encoder.onMalformedInput(CodingErrorAction.REPLACE);
         mUTF8Encoder.onUnmappableCharacter(CodingErrorAction.REPLACE);
 
@@ -151,7 +153,7 @@ public class TermSession {
             @Override
             public void run() {
                 try {
-                    while(true) {
+                    while (true) {
                         int read = mTermIn.read(mBuffer);
                         if (read == -1) {
                             // EOF -- process exited
@@ -217,12 +219,10 @@ public class TermSession {
                     writeQueue.read(buffer, 0, bytesToWrite);
                     termOut.write(buffer, 0, bytesToWrite);
                     termOut.flush();
-                } catch (IOException e) {
+                } catch (IOException | InterruptedException e) {
                     // Ignore exception
                     // We don't really care if the receiver isn't listening.
                     // We just make a best effort to answer the query.
-                    e.printStackTrace();
-                } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
             }
@@ -238,7 +238,7 @@ public class TermSession {
      * Set the terminal emulator's window size and start terminal emulation.
      *
      * @param columns The number of columns in the terminal window.
-     * @param rows The number of rows in the terminal window.
+     * @param rows    The number of rows in the terminal window.
      */
     public void initializeEmulator(int columns, int rows) {
         mTranscriptScreen = new TranscriptScreen(columns, TRANSCRIPT_ROWS, rows, mColorScheme);
@@ -263,9 +263,9 @@ public class TermSession {
      * it to the stream, but implementations in derived classes should call
      * through to this method to do the actual writing.
      *
-     * @param data An array of bytes to write to the terminal.
+     * @param data   An array of bytes to write to the terminal.
      * @param offset The offset into the array at which the data starts.
-     * @param count The number of bytes to be written.
+     * @param count  The number of bytes to be written.
      */
     public void write(byte[] data, int offset, int count) {
         try {
@@ -329,15 +329,15 @@ public class TermSession {
         encoder.reset();
         encoder.encode(charBuf, byteBuf, true);
         encoder.flush(byteBuf);
-        write(byteBuf.array(), 0, byteBuf.position()-1);
+        write(byteBuf.array(), 0, byteBuf.position() - 1);
     }
 
     /* Notify the writer thread that there's new output waiting */
     private void notifyNewOutput() {
         Handler writerHandler = mWriterHandler;
         if (writerHandler == null) {
-           /* Writer thread isn't started -- will pick up data once it does */
-           return;
+            /* Writer thread isn't started -- will pick up data once it does */
+            return;
         }
         writerHandler.sendEmptyMessage(NEW_OUTPUT);
     }
@@ -460,7 +460,7 @@ public class TermSession {
      * implementation.</em>
      *
      * @param columns The number of columns in the terminal window.
-     * @param rows The number of rows in the terminal window.
+     * @param rows    The number of rows in the terminal window.
      */
     public void updateSize(int columns, int rows) {
         if (mEmulator == null) {
@@ -474,7 +474,7 @@ public class TermSession {
      * Retrieve the terminal's screen and scrollback buffer.
      *
      * @return A {@link String} containing the contents of the screen and
-     *         scrollback buffer.
+     * scrollback buffer.
      */
     public String getTranscriptText() {
         return mTranscriptScreen.getTranscriptText();
@@ -507,9 +507,9 @@ public class TermSession {
      * emulator without modifying it in any way.  Subclasses can override it to
      * modify the data before giving it to the terminal.
      *
-     * @param data A byte array containing the data read.
+     * @param data   A byte array containing the data read.
      * @param offset The offset into the buffer where the read data begins.
-     * @param count The number of bytes read.
+     * @param count  The number of bytes read.
      */
     protected void processInput(byte[] data, int offset, int count) {
         mEmulator.append(data, offset, count);
@@ -520,9 +520,9 @@ public class TermSession {
      * emulation client, the session's {@link InputStream}, and any processing
      * being done by {@link #processInput processInput}.
      *
-     * @param data The data to be written to the terminal.
+     * @param data   The data to be written to the terminal.
      * @param offset The starting offset into the buffer of the data.
-     * @param count The length of the data to be written.
+     * @param count  The length of the data to be written.
      */
     protected final void appendToEmulator(byte[] data, int offset, int count) {
         mEmulator.append(data, offset, count);

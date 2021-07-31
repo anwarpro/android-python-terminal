@@ -11,6 +11,7 @@ import android.widget.ImageButton;
 import android.widget.LinearLayout;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 
 /**
  * Created by Hmei
@@ -46,12 +47,8 @@ public class TermShortcutLayout extends LinearLayout {
         String[] shortcuts1 = getResources().getStringArray(R.array.term_shortcut_head);
         String[] shortcuts2 = getResources().getStringArray(R.array.term_shortcut);
         ArrayList<String> shortcuts = new ArrayList<>();
-        for (int i=0;i<shortcuts1.length;i++) {
-            shortcuts.add(shortcuts1[i]);
-        }
-        for (int i=0;i<shortcuts2.length;i++) {
-            shortcuts.add(shortcuts2[i]);
-        }
+        shortcuts.addAll(Arrays.asList(shortcuts1));
+        shortcuts.addAll(Arrays.asList(shortcuts2));
         for (String shortcut : shortcuts) {
             final ShortcutBean shortcutBean = new ShortcutBean(shortcut, true);
             switch (shortcutBean.getName()) {
