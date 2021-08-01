@@ -57,6 +57,9 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.kivy.android.PythonUtil;
+
+import java.io.File;
 import java.io.IOException;
 import java.text.Collator;
 import java.util.Arrays;
@@ -338,12 +341,6 @@ public class Term extends Activity implements UpdateCallback, SharedPreferences.
         final SharedPreferences mPrefs = PreferenceManager.getDefaultSharedPreferences(this);
         mSettings = new TermSettings(getResources(), mPrefs);
         mPrefs.registerOnSharedPreferenceChangeListener(this);
-
-        //extract assests
-
-        AssetExtractor assetExtractor = new AssetExtractor(this);
-        assetExtractor.removeAssets("python");
-        assetExtractor.copyAssets("python");
 
         Intent broadcast = new Intent(ACTION_PATH_BROADCAST);
         if (AndroidCompat.SDK >= 12) {

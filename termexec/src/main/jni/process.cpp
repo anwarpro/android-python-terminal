@@ -27,6 +27,52 @@
 #include <termios.h>
 #include <signal.h>
 #include <string.h>
+#include <Python.h>
+#include <locale.h>
+
+#define ENTRYPOINT_MAXLEN 128
+#define LOG(n, x) __android_log_write(ANDROID_LOG_INFO, (n), (x))
+#define LOGP(x) LOG("python", (x))
+
+static PyObject *androidembed_log(PyObject *self, PyObject *args) {
+    char *logstr = NULL;
+    if (!PyArg_ParseTuple(args, "s", &logstr)) {
+        return NULL;
+    }
+    LOG(getenv("PYTHON_NAME"), logstr);
+    Py_RETURN_NONE;
+}
+
+static PyMethodDef AndroidEmbedMethods[] = {
+        {"log", androidembed_log, METH_VARARGS, "Log on android platform"},
+        {NULL, NULL, 0, NULL}
+};
+
+
+static struct PyModuleDef androidembed = {PyModuleDef_HEAD_INIT, "androidembed",
+                                          "", -1, AndroidEmbedMethods};
+
+PyMODINIT_FUNC initandroidembed(void) {
+    return PyModule_Create(&androidembed);
+}
+
+int dir_exists(char *filename) {
+    struct stat st;
+    if (stat(filename, &st) == 0) {
+        if (S_ISDIR(st.st_mode))
+            return 1;
+    }
+    return 0;
+}
+
+int file_exists(const char *filename) {
+    FILE *file;
+    if ((file = fopen(filename, "r"))) {
+        fclose(file);
+        return 1;
+    }
+    return 0;
+}
 
 typedef unsigned short char16_tt;
 
@@ -118,6 +164,211 @@ static void closeNonstandardFileDescriptors() {
     }
 }
 
+int main(int argc, char *argv[]) {
+
+    char *env_argument = NULL;
+    char *env_entrypoint = NULL;
+    char *env_logname = NULL;
+    char entrypoint[ENTRYPOINT_MAXLEN];
+    int ret = 0;
+    FILE *fd;
+
+    LOGP("Initializing Python for Android");
+
+    // Set a couple of built-in environment vars:
+    setenv("P4A_BOOTSTRAP", "SDL2", 1);  // env var to identify p4a to applications
+    env_argument = getenv("ANDROID_ARGUMENT");
+    setenv("ANDROID_APP_PATH", env_argument, 1);
+    env_entrypoint = getenv("ANDROID_ENTRYPOINT");
+    env_logname = getenv("PYTHON_NAME");
+    if (!getenv("ANDROID_UNPACK")) {
+        setenv("ANDROID_UNPACK", env_argument, 1);
+    }
+    if (env_logname == NULL) {
+        env_logname = "python";
+        setenv("PYTHON_NAME", "python", 1);
+    }
+
+    // Set additional file-provided environment vars:
+    LOGP("Setting additional env vars from p4a_env_vars.txt");
+    char env_file_path[256];
+    snprintf(env_file_path, sizeof(env_file_path),
+             "%s/p4a_env_vars.txt", getenv("ANDROID_UNPACK"));
+    FILE *env_file_fd = fopen(env_file_path, "r");
+    if (env_file_fd) {
+        char *line = NULL;
+        size_t len = 0;
+        while (getline(&line, &len, env_file_fd) != -1) {
+            if (strlen(line) > 0) {
+                char *eqsubstr = strstr(line, "=");
+                if (eqsubstr) {
+                    size_t eq_pos = eqsubstr - line;
+
+                    // Extract name:
+                    char env_name[256];
+                    strncpy(env_name, line, sizeof(env_name));
+                    env_name[eq_pos] = '\0';
+
+                    // Extract value (with line break removed:
+                    char env_value[256];
+                    strncpy(env_value, (char *) (line + eq_pos + 1), sizeof(env_value));
+                    if (strlen(env_value) > 0 &&
+                        env_value[strlen(env_value) - 1] == '\n') {
+                        env_value[strlen(env_value) - 1] = '\0';
+                        if (strlen(env_value) > 0 &&
+                            env_value[strlen(env_value) - 1] == '\r') {
+                            // Also remove windows line breaks (\r\n)
+                            env_value[strlen(env_value) - 1] = '\0';
+                        }
+                    }
+
+                    // Set value:
+                    setenv(env_name, env_value, 1);
+                }
+            }
+        }
+        fclose(env_file_fd);
+    } else {
+        LOGP("Warning: no p4a_env_vars.txt found / failed to open!");
+    }
+
+    LOGP("Changing directory to the one provided by ANDROID_ARGUMENT");
+    LOGP(env_argument);
+    chdir(env_argument);
+
+    Py_SetProgramName(L"android_python");
+
+    /* our logging module for android */
+    PyImport_AppendInittab("androidembed", initandroidembed);
+
+    LOGP("Preparing to initialize python");
+
+    // Set up the python path
+    char paths[256];
+
+    char python_bundle_dir[256];
+    snprintf(python_bundle_dir, 256,
+             "%s/_python_bundle", getenv("ANDROID_UNPACK"));
+    if (dir_exists(python_bundle_dir)) {
+        LOGP("_python_bundle dir exists");
+        snprintf(paths, 256,
+                 "%s/stdlib.zip:%s/modules",
+                 python_bundle_dir, python_bundle_dir);
+
+        LOGP("calculated paths to be...");
+        LOGP(paths);
+
+        wchar_t *wchar_paths = Py_DecodeLocale(paths, NULL);
+        Py_SetPath(wchar_paths);
+
+        LOGP("set wchar paths...");
+    } else {
+        LOGP("_python_bundle does not exist...this not looks good, all python"
+             " recipes should have this folder, should we expect a crash soon?");
+    }
+
+    Py_Initialize();
+    LOGP("Initialized python");
+
+    /* ensure threads will work.
+     */
+    LOGP("AND: Init threads");
+    PyEval_InitThreads();
+
+    PyRun_SimpleString("import androidembed\nandroidembed.log('testing python "
+                       "print redirection')");
+
+    /* inject our bootstrap code to redirect python stdin/stdout
+     * replace sys.path with our path
+     */
+    PyRun_SimpleString("import sys, posix\n");
+
+    char add_site_packages_dir[256];
+
+    if (dir_exists(python_bundle_dir)) {
+        snprintf(add_site_packages_dir, 256,
+                 "sys.path.append('%s/site-packages')",
+                 python_bundle_dir);
+
+        PyRun_SimpleString("import sys\n"
+                           "sys.argv = ['notaninterpreterreally']\n"
+                           "from os.path import realpath, join, dirname");
+        PyRun_SimpleString(add_site_packages_dir);
+        /* "sys.path.append(join(dirname(realpath(__file__)), 'site-packages'))") */
+        PyRun_SimpleString("sys.path = ['.'] + sys.path");
+    }
+
+    LOGP("AND: Ran string");
+
+    /* run it !
+     */
+    LOGP("Run user program, change dir and execute entrypoint");
+
+    /* Get the entrypoint, search the .pyo then .py
+     */
+    char *dot = strrchr(env_entrypoint, '.');
+    char *ext = ".pyc";
+
+    if (strlen(env_entrypoint) > ENTRYPOINT_MAXLEN - 2) {
+        LOGP("Entrypoint path is too long, try increasing ENTRYPOINT_MAXLEN.");
+        return -1;
+    }
+    if (!strcmp(dot, ext)) {
+        if (!file_exists(env_entrypoint)) {
+            strcpy(entrypoint, env_entrypoint);
+            entrypoint[strlen(env_entrypoint) - 1] = '\0';
+            LOGP(entrypoint);
+            if (!file_exists(entrypoint)) {
+                LOGP("Entrypoint not found (.pyc, fallback on .py), abort");
+                return -1;
+            }
+        } else {
+            strcpy(entrypoint, env_entrypoint);
+        }
+    } else if (!strcmp(dot, ".py")) {
+        strcpy(entrypoint, env_entrypoint);
+        entrypoint[strlen(env_entrypoint) + 1] = '\0';
+        entrypoint[strlen(env_entrypoint)] = 'c';
+        if (!file_exists(entrypoint)) {
+            if (!file_exists(env_entrypoint)) {
+                LOGP("Entrypoint not found (.py), abort.");
+                return -1;
+            }
+            strcpy(entrypoint, env_entrypoint);
+        }
+    } else {
+        LOGP("Entrypoint have an invalid extension (must be .py or .pyc), abort.");
+        return -1;
+    }
+
+
+    auto **argv_copy = (wchar_t **) PyMem_RawMalloc(sizeof(wchar_t *) * (argc + 1));
+    auto **argv_copy2 = (wchar_t **) PyMem_RawMalloc(sizeof(wchar_t *) * (argc + 1));
+
+    char *oldloc = strdup(setlocale(LC_ALL, 0));
+    setlocale(LC_ALL, "");
+    for (int i = 0; i < argc; ++i) {
+        argv_copy[i] = Py_DecodeLocale(argv[i], nullptr);
+        if (argv_copy[i] == 0) {
+            free(oldloc);
+        }
+        argv_copy2[i] = argv_copy[i];
+    }
+    argv_copy2[argc] = argv_copy[argc] = 0;
+
+    ret = Py_Main(argc, argv_copy);
+
+    if (PyErr_Occurred() != NULL) {
+        ret = 1;
+        PyErr_Print(); /* This exits with the right code if SystemExit. */
+        PyObject *f = PySys_GetObject("stdout");
+        if (PyFile_WriteString("\n", f))
+            PyErr_Clear();
+    }
+
+    return ret;
+}
+
 static int create_subprocess(JNIEnv *env, const char *cmd, char *const argv[], char *const envp[],
                              int masterFd) {
     // same size as Android 1.6 libc/unistd/ptsname_r.c
@@ -170,7 +421,14 @@ static int create_subprocess(JNIEnv *env, const char *cmd, char *const argv[], c
             }
         }
 
-        execv(cmd, argv);
+//        execv(cmd, argv);
+
+        char *argv[2];
+        argv[0] = "Python_app";
+        argv[1] = NULL;
+
+        main(1, argv);
+
         exit(-1);
     } else {
         return (int) pid;

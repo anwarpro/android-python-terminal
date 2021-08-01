@@ -94,8 +94,6 @@ public class SDLActivity extends Activity implements View.OnSystemUiVisibilityCh
     // This is what SDL runs in. It invokes SDL_main(), eventually
     protected static Thread mSDLThread;
 
-    public static int keyboardInputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD;
-
     protected static SDLGenericMotionListener_API12 getMotionListener() {
         if (mMotionListener == null) {
             if (Build.VERSION.SDK_INT >= 26) {
@@ -2028,7 +2026,7 @@ class DummyEdit extends View implements View.OnKeyListener {
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
         ic = new SDLInputConnection(this, true);
 
-        outAttrs.inputType = SDLActivity.keyboardInputType;
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD;
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
                 | EditorInfo.IME_FLAG_NO_FULLSCREEN /* API 11 */;
 

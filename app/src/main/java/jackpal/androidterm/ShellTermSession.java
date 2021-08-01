@@ -16,6 +16,8 @@
 
 package jackpal.androidterm;
 
+
+import android.content.Context;
 import android.os.Handler;
 import android.os.Message;
 import android.os.ParcelFileDescriptor;
@@ -25,6 +27,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.List;
 
 import jackpal.androidterm.compat.FileCompat;
 import jackpal.androidterm.util.TermSettings;
@@ -76,6 +79,11 @@ public class ShellTermSession extends GenericTermSession {
         mWatcherThread.setName("Process watcher");
     }
 
+    public String getAppRoot(Context context) {
+        String app_root = context.getFilesDir().getAbsolutePath() + "/app";
+        return app_root;
+    }
+
     private void initializeSession() throws IOException {
         TermSettings settings = mSettings;
 
@@ -93,15 +101,47 @@ public class ShellTermSession extends GenericTermSession {
                 }
             }
         }
+
+        path = path + ":" + App.appContext.getApplicationInfo().nativeLibraryDir;
+
         if (settings.verifyPath()) {
             path = checkPath(path);
         }
-        String[] env = new String[3];
+
+        String app_root_dir = getAppRoot(App.appContext);
+
+        String entry_point = getEntryPoint(app_root_dir);
+
+        String[] env = new String[9];
         env[0] = "TERM=" + settings.getTermType();
         env[1] = "PATH=" + path;
-        env[2] = "HOME=" + settings.getHomePath();
+        env[2] = "HOME=" + App.appContext.getApplicationInfo().nativeLibraryDir;
+        env[3] = "PYTHONHOME=" + app_root_dir;
+        env[4] = "PYTHONPATH=" + app_root_dir + ":" + app_root_dir + "/lib";
+        env[5] = "PYTHONOPTIMIZE=2";
+        env[6] = "ANDROID_ARGUMENT=" + app_root_dir;
+        env[7] = "ANDROID_ENTRYPOINT=" + entry_point;
+        env[8] = "ANDROID_APP_PATH=" + app_root_dir;
+
+//        loadLibraries(App.appContext);
 
         mProcId = createSubprocess(settings.getShell(), env);
+    }
+
+    public String getEntryPoint(String search_dir) {
+        /* Get the main file (.pyc|.pyo|.py) depending on if we
+         * have a compiled version or not.
+         */
+        List<String> entryPoints = new ArrayList<String>();
+        entryPoints.add("main.pyo");  // python 2 compiled files
+        entryPoints.add("main.pyc");  // python 3 compiled files
+        for (String value : entryPoints) {
+            File mainFile = new File(search_dir + "/" + value);
+            if (mainFile.exists()) {
+                return value;
+            }
+        }
+        return "main.py";
     }
 
     private String checkPath(String path) {
@@ -114,7 +154,7 @@ public class ShellTermSession extends GenericTermSession {
                 checkedPath.append(":");
             }
         }
-        return checkedPath.substring(0, checkedPath.length()-1);
+        return checkedPath.substring(0, checkedPath.length() - 1);
     }
 
     @Override
@@ -161,7 +201,7 @@ public class ShellTermSession extends GenericTermSession {
         final int WHITESPACE = 1;
         final int INQUOTE = 2;
         int state = WHITESPACE;
-        ArrayList<String> result =  new ArrayList<String>();
+        ArrayList<String> result = new ArrayList<String>();
         int cmdLen = cmd.length();
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < cmdLen; i++) {
@@ -169,7 +209,7 @@ public class ShellTermSession extends GenericTermSession {
             if (state == PLAIN) {
                 if (Character.isWhitespace(c)) {
                     result.add(builder.toString());
-                    builder.delete(0,builder.length());
+                    builder.delete(0, builder.length());
                     state = WHITESPACE;
                 } else if (c == '"') {
                     state = INQUOTE;
